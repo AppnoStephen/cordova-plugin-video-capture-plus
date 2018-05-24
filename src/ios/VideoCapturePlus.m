@@ -39,6 +39,24 @@
     [super viewWillAppear:animated];
 }
 
+//APPNO - landscape lock
+- (BOOL)shouldAutorotate
+{
+    return NO;
+}
+
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 90000
+- (UIInterfaceOrientationMask)supportedInterfaceOrientations
+{
+    return UIInterfaceOrientationMaskLandscapeRight;
+}
+#else
+- (NSUInteger)supportedInterfaceOrientations
+{
+    return UIInterfaceOrientationMaskLandscapeRight;
+}
+#endif
+
 @end
 
 @implementation VideoCapturePlus
@@ -49,6 +67,7 @@
     self.inUse = NO;
 }
 
+// APPNO - rotate image if needed since on Iphones, the overlay image does not rotate on device orientation change
 -(void)rotateOverlayIfNeeded:(UIView*) overlayView {
     UIDeviceOrientation deviceOrientation = [UIDevice currentDevice].orientation;
     
@@ -112,8 +131,154 @@
     }
 }
 
+-(void) alignOverlayDimensionsWithOrientationAppnovation {
+    if (portraitOverlay == nil && landscapeOverlay == nil) {
+        return;
+    }
+    
+    UIDeviceOrientation deviceOrientation = [UIDevice currentDevice].orientation;
+    UIImage* overlayImage;
+    UIView* overlayView = [[UIView alloc] initWithFrame:pickerController.view.frame]; //parent of overlayViewBackground and overlayViewImage
+    UIView* overlayViewBackground = [[UIView alloc] initWithFrame:pickerController.view.frame]; //sibling of overlayViewImage
+    UIImageView* overlayViewImage = [[UIImageView alloc] initWithFrame:pickerController.view.frame]; //sibling of overlayViewBackground
+    
+    // set png transparency
+    [overlayView.layer setOpaque:NO];
+    overlayView.opaque = NO;
+    
+    if(UIDeviceOrientationIsLandscape(deviceOrientation)) {
+        overlayImage = landscapeOverlay;
+    } else {
+        overlayImage = portraitOverlay;
+    }
+    
+    // set overlayView, portrait mode
+    if (overlayImage != nil) {
+        
+        [pickerController stopVideoCapture]; // only called when video is already recording
+        
+        int portraitWidth = CGRectGetWidth(pickerController.view.frame);
+        int portraitHeight = CGRectGetHeight(pickerController.view.frame);
+        int width = portraitWidth < portraitHeight ? portraitWidth : portraitHeight;
+        int height = portraitWidth < portraitHeight ? portraitHeight : portraitWidth;
+        
+        // set overlayView's x, y, width, height
+        [overlayView setFrame:CGRectMake(0, 0, height, width)];
+        
+        // set overlayViewImage's x, y, width, height and image
+        [overlayViewImage setFrame:CGRectMake(0, 0, width, height)];
+        overlayViewImage.image = overlayImage;
+        
+        
+        // set overlayViewBackground's x, y, width, height
+        [overlayViewBackground setFrame:overlayView.bounds];
+        
+        //set overlayViewBackground's backgroundOverlayColor
+        if (overlayViewBackgroundColor != nil) {
+            overlayViewBackground.backgroundColor = overlayViewBackgroundColor;
+        } else{
+            overlayViewBackground.backgroundColor = UIColor.blackColor;
+        }
+        
+        //set overlayViewBackground's backgroundOverlayAlpha
+        if([overlayViewBackgroundAlpha floatValue] != 0) {
+            overlayViewBackground.alpha = [overlayViewBackgroundAlpha floatValue];
+        } else{
+            overlayViewBackground.alpha = 0.70;
+        }
+        
+        //subviews are siblings of one another and overlayViewImage sits ontop of overlayViewBackground
+        [overlayView addSubview:overlayViewBackground];
+        [overlayView addSubview:overlayViewImage];
+        [overlayViewImage setCenter:CGPointMake(height>>1, width>>1)]; //center overlayViewImage
+        [overlayViewImage setContentMode:UIViewContentModeScaleAspectFit];
+        [self rotateOverlayToPortrait:overlayViewImage];
+        
+        pickerController.view.userInteractionEnabled = false;
+        if(isCameraOverlayShowing == false){
+            pickerController.cameraOverlayView = overlayView;
+            [self cameraOverlayViewWillAppear];
+            [self cameraOverlayViewDidAppear];
+            isCameraOverlayShowing = true;
+        }
+        
+    } else{
+        [self cameraOverlayViewDidDisappear];
+        [self performSelector:@selector(removeCameraOverlayView) withObject:nil afterDelay:overlayViewAnimationDuration];
+    }
+}
+
+// APPNO - remove cameraOverlayView
+-(void)removeCameraOverlayView {
+    pickerController.cameraOverlayView = nil;
+    pickerController.view.userInteractionEnabled = true;
+    isCameraOverlayShowing = false;
+    
+}
+
+// APPNO - animate in cameraOverlayView Initial
+-(void)cameraOverlayViewWillAppear {
+    pickerController.cameraOverlayView.alpha = 0;
+    //pickerController.cameraOverlayView.transform = CGAffineTransformMakeScale(0.0, 0.0);
+}
+
+// APPNO - animate in cameraOverlayView Final
+-(void)cameraOverlayViewDidAppear {
+    UIViewPropertyAnimator *animatorIn = [[UIViewPropertyAnimator alloc] initWithDuration:overlayViewAnimationDuration curve:UIViewAnimationCurveEaseOut animations:^{
+        pickerController.cameraOverlayView.alpha = 1.0;
+        //pickerController.cameraOverlayView.transform = CGAffineTransformMakeScale(1.0, 1.0);
+    }];
+    [animatorIn startAnimation];
+}
+
+// APPNO - animate out cameraOverlayView Final
+-(void)cameraOverlayViewDidDisappear {
+    UIViewPropertyAnimator *animatorOut = [[UIViewPropertyAnimator alloc] initWithDuration:overlayViewAnimationDuration curve:UIViewAnimationCurveEaseOut animations:^{
+        pickerController.cameraOverlayView.alpha = 0;
+        //pickerController.cameraOverlayView.transform = CGAffineTransformMakeScale(0.1, 0.1);
+    }];
+    [animatorOut startAnimation];
+}
+
+// APPNO - we are using landscape lock so whenever we rotate to portrait mode, we must manually rotate the overlay image
+-(void)rotateOverlayToPortrait:(UIView*) overlayView {
+    
+    float rotation = -M_PI_2;
+    
+    if (rotation != 0) {
+        CGAffineTransform transform = overlayView.transform;
+        transform = CGAffineTransformRotate(transform, rotation);
+        overlayView.transform = transform;
+    }
+}
+
+// APPNO - capture orientation change event
 - (void) orientationChanged:(NSNotification *)notification {
-    [self alignOverlayDimensionsWithOrientation];
+    //[self alignOverlayDimensionsWithOrientation];
+    [self alignOverlayDimensionsWithOrientationAppnovation];
+}
+
+// APPNO - remove cameraOverlayView on capture preview screen
+-(void)handleNotification:(NSNotification *)message {
+    if ([[message name] isEqualToString:@"_UIImagePickerControllerUserDidCaptureItem"]) {
+        // Remove overlay, so that it is not available on the preview view. Also enable user interaction
+        isVideoPreviewShowing = true;
+        //[self removeCameraOverlayView];
+    }
+    if ([[message name] isEqualToString:@"_UIImagePickerControllerUserDidRejectItem"]) {
+        // Retake button pressed on preview. Add overlay, so that is available on the camera again
+        isVideoPreviewShowing = false;
+        [self alignOverlayDimensionsWithOrientationAppnovation];
+    }
+}
+
+// APPNO - change hex value to UI color assuming input is formatted like "#00FF00" (#RRGGBB).
+- (UIColor* ) colorFromHexString:(NSString* )hexString{
+    unsigned rgbValue = 0;
+    NSScanner *scanner = [NSScanner scannerWithString:hexString];
+    [scanner setScanLocation:1]; //bypass '#' character
+    [scanner scanHexInt:&rgbValue];
+    return [UIColor colorWithRed:((rgbValue & 0xFF0000) >> 16)/255.0 green:((rgbValue & 0xFF00) >> 8)/255.0 blue:(rgbValue & 0xFF)/255.0 alpha:1.0];
 }
 
 - (void)captureVideo:(CDVInvokedUrlCommand*)command {
@@ -125,6 +290,7 @@
     [[UIDevice currentDevice] beginGeneratingDeviceOrientationNotifications];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(orientationChanged:) name:@"UIDeviceOrientationDidChangeNotification" object:nil];
 
+    
     // enable this line of code if you want to do stuff when the capture session is started
     // [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(didStartRunning:) name:AVCaptureSessionDidStartRunningNotification object:nil];
     
@@ -135,8 +301,16 @@
         options = [NSDictionary dictionary];
     }
     
+    // APPNO, sign up to NSNotificationCenter when user finishes capturing a video
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleNotification:) name:@"_UIImagePickerControllerUserDidCaptureItem" object:nil ];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleNotification:) name:@"_UIImagePickerControllerUserDidRejectItem" object:nil ];
+    
+    // APPNO - options could contain limit, duration, highquality, frontcamera portraitOverlay, landscapeOverlay, overlayText, backgroundOverlayColor, backgroundOverlayOpacity, overlayViewAnimationDuration
+    
     // options could contain limit, duration, highquality, frontcamera and mode
     // taking more than one video (limit) is only supported if provide own controls via cameraOverlayView property
+    isVideoPreviewShowing = false;
+    isCameraOverlayShowing = false;
     NSNumber* duration  = [options objectForKey:@"duration"];
     BOOL highquality    = [[options objectForKey:@"highquality"] boolValue];
     BOOL frontcamera    = [[options objectForKey:@"frontcamera"] boolValue];
@@ -145,6 +319,23 @@
     NSString* overlayText  = [options objectForKey:@"overlayText"];
     NSString* mediaType = nil;
 
+    
+    //TODO, options object currently does not contain backgroundOverlayColor, overlayViewBackgroundAlpha or overlayViewBackgroundAlpha, these values will become default values
+    NSString* overlayViewBackgroundColorHex = [options objectForKey:@"backgroundOverlayColor"]; //hex string
+    if(overlayViewBackgroundColorHex != nil ){
+        overlayViewBackgroundColor = [self colorFromHexString:overlayViewBackgroundColorHex];
+    }
+    
+    overlayViewBackgroundAlpha = @([[options objectForKey:@"backgroundOverlayOpacity"] floatValue]);
+    
+    overlayViewAnimationDuration = [[options objectForKey:@"backgroundOverlayAnimationDuration"] floatValue];
+    
+    //set default animation time if none is given
+    if(overlayViewAnimationDuration == 0){
+        overlayViewAnimationDuration = 0.25;
+        
+    }
+    
     if ([UIImagePickerController isSourceTypeAvailable:UIImagePickerControllerSourceTypeCamera]) {
         // there is a camera, it is available, make sure it can do movies
         pickerController = [[CDVImagePickerPlus alloc] init];
@@ -192,7 +383,8 @@
             }
             
             pickerController.delegate = self;
-            [self alignOverlayDimensionsWithOrientation];
+            //[self alignOverlayDimensionsWithOrientation];
+            [self alignOverlayDimensionsWithOrientationAppnovation];
 
 
 

@@ -38,6 +38,12 @@ typedef struct {
     AVCaptureMovieFileOutput *MovieFileOutput;
     UIImage* portraitOverlay;
     UIImage* landscapeOverlay;
+    //APPNO, extra properties
+    BOOL isVideoPreviewShowing;
+    BOOL isCameraOverlayShowing;
+    UIColor* overlayViewBackgroundColor;
+    NSNumber* overlayViewBackgroundAlpha;
+    Float32 overlayViewAnimationDuration;
 }
 @property BOOL inUse;
 @property (nonatomic, strong) NSTimer* timer;
